@@ -1,38 +1,5 @@
-/****************************************************************************
- *
- *   Copyright (c) 2013 - 2016 PX4 Development Team. All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
- *
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in
- *    the documentation and/or other materials provided with the
- *    distribution.
- * 3. Neither the name PX4 nor the names of its contributors may be
- *    used to endorse or promote products derived from this software
- *    without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
- * FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
- * COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
- * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS
- * OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED
- * AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
- * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
- * ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
- *
- ****************************************************************************/
-
 /**
- * @file mc_pos_control_main.cpp
+ * @file mc_pos_control_main.cpp 멀티 콥터 위치 제어기 메인 함수
  * Multicopter position controller.
  *
  * Original publication for the desired attitude generation:
@@ -46,7 +13,6 @@
  * (i.e. rotation matrix for multicopter orientation) and thrust module (i.e. multicopter thrust itself).
  * Controller doesn't use Euler angles for work, they generated only for more human-friendly control and logging.
  *
- * @author Anton Babushkin <anton.babushkin@me.com>
  */
 
 #include <px4_config.h>
@@ -684,7 +650,7 @@ MulticopterPositionControl::poll_subscriptions()
 }
 
 float
-MulticopterPositionControl::scale_control(float ctl, float end, float dz, float dy)
+MulticopterPositionControl::scale_control(float ctl, float end, float dz, float dy) //scale control 은 이미 float으로 정적으로 정의되어 있음
 {
 	if (ctl > dz) {
 		return dy + (ctl - dz) * (1.0f - dy) / (end - dz);
@@ -794,20 +760,20 @@ MulticopterPositionControl::limit_pos_sp_offset()
 }
 
 void
-MulticopterPositionControl::control_manual(float dt)
+MulticopterPositionControl::control_manual(float dt) // 수동 조종시~
 {
 	math::Vector<3> req_vel_sp; // X,Y in local frame and Z in global (D), in [-1,1] normalized range
-	req_vel_sp.zero();
+	req_vel_sp.zero(); // req_vel_sp.zero() 가 무슨 역할을 하는지 알아봐야 할듯. 0으로 초기화 하는 것으로 추측됨?
 
 	if (_control_mode.flag_control_altitude_enabled) {
 		/* set vertical velocity setpoint with throttle stick */
-		req_vel_sp(2) = -scale_control(_manual.z - 0.5f, 0.5f, _params.alt_ctl_dz, _params.alt_ctl_dy); // D
-	}
+		req_vel_sp(2) = -scale_control(_manual.z - 0.5f, 0.5f, _params.alt_ctl_dz, _params.alt_ctl_dy); // scale_control (ctrl,end,dz,dy), 드론마다 환경이 달라서 스케일을 하는 듯.
+	}// 여튼 그래서 req_vel_sp 고도는  즉, 입력 속도의 set point 는 flag_control 고도 제어 가능시 ~~~ 근데 왜 end 값에는 항상 0.5f 값이 들어가는가?
 
 	if (_control_mode.flag_control_position_enabled) {
 		/* set horizontal velocity setpoint with roll/pitch stick */
 		req_vel_sp(0) = _manual.x;
-		req_vel_sp(1) = _manual.y;
+		req_vel_sp(1) = _manual.y; //
 	}
 
 	if (_control_mode.flag_control_altitude_enabled) {
@@ -820,22 +786,23 @@ MulticopterPositionControl::control_manual(float dt)
 		reset_pos_sp();
 	}
 
-	/* limit velocity setpoint */
-	float req_vel_sp_norm = req_vel_sp.length();
+	/* limit velocity setpoint -> sp 는 setpoint 의 약자 */
+	float req_vel_sp_norm = req_vel_sp.length(); //req_vel_sp 의 내부를 파악하는 것이 중요할듯. 왜 length 값을 가져와 놈으로 두고 1보다 크면 렝스로 나누는지 궁금.
 
 	if (req_vel_sp_norm > 1.0f) {
 		req_vel_sp /= req_vel_sp_norm;
 	}
 
 	/* _req_vel_sp scaled to 0..1, scale it to max speed and rotate around yaw */
-	math::Matrix<3, 3> R_yaw_sp;
-	R_yaw_sp.from_euler(0.0f, 0.0f, _att_sp.yaw_body);
-	math::Vector<3> req_vel_sp_scaled = R_yaw_sp * req_vel_sp.emult(
+	math::Matrix<3, 3> R_yaw_sp; //R_yaw_sp 는 전체코드에서 이 세개가 전부. 
+	R_yaw_sp.from_euler(0.0f, 0.0f, _att_sp.yaw_body); //from_euler(x: Rad<S>, y: Rad<S>, z: Rad<S>)
+	math::Vector<3> req_vel_sp_scaled = R_yaw_sp * req_vel_sp.emult( //req_vel_sp_scaled 는 
 			_params.vel_cruise); // in NED and scaled to actual velocity
 
 	/*
 	 * assisted velocity mode: user controls velocity, but if	velocity is small enough, position
 	 * hold is activated for the corresponding axis
+	 * assisted v mode 에는 사용자가 속도를 제어한다, 하지만 속도가 매우 작을 경우 위체 유지는 
 	 */
 
 	/* horizontal axes */
@@ -1181,11 +1148,11 @@ void MulticopterPositionControl::control_auto(float dt)
 }
 
 void
-MulticopterPositionControl::task_main()
+MulticopterPositionControl::task_main()   //여기가 메인인가? 
 {
 
 	/*
-	 * do subscriptions
+	 * do subscriptions 통신 관련 코드인듯. subscribe 
 	 */
 	_vehicle_status_sub = orb_subscribe(ORB_ID(vehicle_status));
 	_vehicle_land_detected_sub = orb_subscribe(ORB_ID(vehicle_land_detected));
@@ -1288,13 +1255,13 @@ MulticopterPositionControl::task_main()
 					PX4_ISFINITE(_local_pos.y) &&
 					PX4_ISFINITE(_local_pos.z)) {
 
-				_pos(0) = _local_pos.x;
+				_pos(0) = _local_pos.x; // _pos() 배열에 첫 번째에는 x 위치를 두 번째에는 y 위치를 대입 _local_pos.*은 어디서 subscribe 하는 것 
 				_pos(1) = _local_pos.y;
 				if (_params.alt_mode == 1 && _local_pos.dist_bottom_valid) {
 					_pos(2) = -_local_pos.dist_bottom;
 				} else {
 					_pos(2) = _local_pos.z;
-				}
+				} //z 값을 대입할 때에는 고도 측정 방법에 따라 들어가는 값이 달라지는가?
 			}
 
 			if (PX4_ISFINITE(_local_pos.vx) &&
@@ -1312,8 +1279,8 @@ MulticopterPositionControl::task_main()
 
 			_vel_err_d(0) = _vel_x_deriv.update(-_vel(0));
 			_vel_err_d(1) = _vel_y_deriv.update(-_vel(1));
-			_vel_err_d(2) = _vel_z_deriv.update(-_vel(2));
-		}
+			_vel_err_d(2) = _vel_z_deriv.update(-_vel(2));//_vel_*_deriv ~ 는 뭔지 모르겠음 여튼 에러를 초기화하는 코드인듯.
+		
 
 		// reset the horizontal and vertical position hold flags for non-manual modes
 		// or if position / altitude is not controlled
